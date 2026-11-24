@@ -3,22 +3,88 @@ import pandas as pd
 import re
 
 
+# Common names and patterns used for identifier columns.
+IDENTIFIER_NAMES = {
+    "id",
+    "sku",
+    "upc",
+    "isbn",
+    "uuid",
+    "guid",
+    "barcode",
+    "reference",
+    "ref",
+    "serial",
+    "number",
+    "phone",
+    "postcode",
+    "zipcode",
+    "pincode",
+}
+
+IDENTIFIER_SUFFIXES = (
+    "_id",
+    "_sku",
+    "_code",
+    "_reference",
+    "_ref",
+    "_serial",
+    "_number",
+    "_no",
+    "_uuid",
+    "_guid",
+    "_barcode",
+    "_phone",
+    "_postcode",
+    "_zipcode",
+    "_pincode",
+)
+
+
 def standardize_column_names(df):
-    """Convert column names into consistent snake_case format."""
+    """Convert column names into unique snake_case names."""
 
     df = df.copy()
     standardized = []
+    used_names = set()
 
-    for column in df.columns:
+    for index, column in enumerate(df.columns, start=1):
         name = str(column).strip().lower()
+
         name = re.sub(r"[^a-z0-9]+", "_", name)
         name = re.sub(r"_+", "_", name)
         name = name.strip("_")
+
+        if not name:
+            name = f"column_{index}"
+
+        original_name = name
+        suffix = 2
+
+        while name in used_names:
+            name = f"{original_name}_{suffix}"
+            suffix += 1
+
+        used_names.add(name)
         standardized.append(name)
 
     df.columns = standardized
 
     return df
+
+
+def is_identifier_column(column_name):
+    """Identify columns that should preserve their original values."""
+
+    name = column_name.lower()
+
+    if name in IDENTIFIER_NAMES:
+        return True
+
+    if name.endswith(IDENTIFIER_SUFFIXES):
+        return True
+
+    return False
 
 
 def looks_like_date(values):
@@ -42,21 +108,20 @@ def looks_like_date(values):
 def infer_column_type(column_name, series):
     """Automatically infer a column's data type."""
 
+    # Detect identifiers before numeric conversion.
+    if is_identifier_column(column_name):
+        return "identifier"
+
     values = series.dropna()
 
     if len(values) == 0:
         return "text"
 
-    if (
-        column_name == "id"
-        or column_name.endswith("_id")
-        or column_name.endswith("_code")
-    ):
-        return "identifier"
-
     normalized = values.astype(str).str.strip().str.lower()
 
-    boolean_values = {"true", "false", "yes", "no", "y", "n"}
+    boolean_values = {
+        "true", "false", "yes", "no", "y", "n"
+    }
 
     if normalized.isin(boolean_values).all():
         return "boolean"
@@ -76,7 +141,15 @@ def infer_column_type(column_name, series):
         if parsed_dates.notna().mean() >= 0.8:
             return "date"
 
-    numeric_values = pd.to_numeric(values, errors="coerce")
+    numeric_cleaned = (
+    values.astype("string")
+    .str.replace(",", "", regex=False)
+    )
+    numeric_values = pd.to_numeric(
+    numeric_cleaned,
+    errors="coerce"
+    )
+    numeric_values = pd.to_numeric(numeric_cleaned, errors="coerce")
 
     if numeric_values.notna().mean() >= 0.8:
         return "numeric"

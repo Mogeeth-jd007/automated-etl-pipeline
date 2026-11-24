@@ -29,7 +29,12 @@ def convert_column_types(df, schema):
 
         data_type = details["data_type"]
 
-        if data_type == "numeric":
+        if data_type == "identifier":
+            # Preserve identifiers as strings.
+            # This prevents loss of leading zeros.
+            df[column] = df[column].astype("string").str.strip()
+
+        elif data_type == "numeric":
             cleaned_values = (
                 df[column]
                 .astype("string")
@@ -66,7 +71,9 @@ def convert_column_types(df, schema):
                 .str.lower()
             )
 
-            df[column] = normalized.map(boolean_mapping).astype("boolean")
+            df[column] = normalized.map(
+                boolean_mapping
+            ).astype("boolean")
 
     return df
 
