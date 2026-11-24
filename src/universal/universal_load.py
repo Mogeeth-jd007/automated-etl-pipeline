@@ -1,6 +1,7 @@
-
-import re
+﻿import re
 import sqlite3
+
+from contextlib import closing
 from pathlib import Path
 
 import pandas as pd
@@ -12,8 +13,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 def sanitize_table_name(name):
     """Convert a dataset name into a safe SQLite table name."""
 
-    table_name = re.sub(r"[^a-zA-Z0-9_]", "_", str(name).lower())
-    table_name = re.sub(r"_+", "_", table_name).strip("_")
+    table_name = re.sub(
+        r"[^a-zA-Z0-9_]",
+        "_",
+        str(name).lower()
+    )
+
+    table_name = re.sub(
+        r"_+",
+        "_",
+        table_name
+    ).strip("_")
 
     if not table_name:
         table_name = "dataset"
@@ -33,41 +43,53 @@ def load_universal(
     """
     Load a DataFrame into a dynamically created SQLite table.
 
-    No dataset profile or predefined table schema is required.
+    Automatically close the database connection after use.
     """
 
     if if_exists not in {"replace", "append", "fail"}:
-        raise ValueError("if_exists must be replace, append, or fail")
+        raise ValueError(
+            "if_exists must be replace, append, or fail"
+        )
 
     table_name = sanitize_table_name(table_name)
 
     if database_path is None:
-        database_path = PROJECT_ROOT / "data" / "universal_pipeline.db"
+
+        database_path = (
+            PROJECT_ROOT / "data" / "universal_pipeline.db"
+        )
+
     else:
+
         database_path = Path(database_path)
 
         if not database_path.is_absolute():
             database_path = PROJECT_ROOT / database_path
 
-    database_path.parent.mkdir(parents=True, exist_ok=True)
+    database_path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
     print("\n========== UNIVERSAL DATABASE LOAD STARTED ==========")
 
-    with sqlite3.connect(database_path) as connection:
+    with closing(sqlite3.connect(database_path)) as connection:
 
-        df.to_sql(
-            name=table_name,
-            con=connection,
-            if_exists=if_exists,
-            index=False
-        )
+        with connection:
 
-        loaded_count = len(df)
+            df.to_sql(
+                name=table_name,
+                con=connection,
+                if_exists=if_exists,
+                index=False
+            )
 
-        table_info = pd.read_sql_query(
-            f'PRAGMA table_info("{table_name}")',
-            connection
-        )
+            loaded_count = len(df)
+
+            table_info = pd.read_sql_query(
+                f'PRAGMA table_info("{table_name}")',
+                connection
+            )
 
     print(f"Database: {database_path}")
     print(f"Table: {table_name}")

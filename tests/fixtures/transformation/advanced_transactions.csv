@@ -1,0 +1,7 @@
+﻿Transaction ID,Customer Name,Quantity,Revenue,Discount,Transaction Date,Is Paid
+0001,  Arun  ,10,"INR 45,000",10%,2026-11-24,YES
+0002,Meena,20,USD 250,15%,25/11/2026,NO
+0003,Ravi,"1,000",EUR 500,20%,"November 26, 2026",ON
+0004,Divya,5,GBP 750,25%,2026-11-27T14:30:00+05:30,OFF
+0005,Kiran,"12,34",USD abc,abc%,01/02/2026,maybe
+0006,Priya,NULL,NULL,NULL,NULL,NULL
