@@ -1,8 +1,8 @@
-
-from pathlib import Path
+﻿from pathlib import Path
 
 import pandas as pd
 
+from .universal_extract import extract_universal
 from .universal_transform import transform_universal
 from .universal_validate import validate_universal
 from .universal_load import load_universal
@@ -36,7 +36,9 @@ def resolve_input_file(input_file):
         )
 
     if resolved_path.suffix.lower() != ".csv":
-        raise ValueError("Universal pipeline currently accepts CSV files only.")
+        raise ValueError(
+            "Universal pipeline currently accepts CSV files only."
+        )
 
     return resolved_path
 
@@ -53,7 +55,6 @@ def run_universal_pipeline(input_file):
     print("       UNIVERSAL AUTOMATED ETL PIPELINE")
     print("=" * 60)
 
-    # Resolve the input file.
     file_path = resolve_input_file(input_file)
     dataset_name = file_path.stem
 
@@ -63,10 +64,7 @@ def run_universal_pipeline(input_file):
     # STEP 1: EXTRACTION
     print("\n[STEP 1/5] EXTRACTING DATA")
 
-    df = pd.read_csv(file_path)
-
-    print(f"Records extracted: {len(df)}")
-    print(f"Columns extracted: {len(df.columns)}")
+    df = extract_universal(file_path)
 
     # STEP 2: TRANSFORMATION
     print("\n[STEP 2/5] TRANSFORMING DATA")

@@ -1,7 +1,9 @@
+﻿import pandas as pd
 
-import pandas as pd
-
-from .schema_detector import detect_schema
+from .schema_detector import (
+    detect_schema,
+    standardize_column_names
+)
 
 
 def clean_text_columns(df):
@@ -14,7 +16,13 @@ def clean_text_columns(df):
     ).columns
 
     for column in text_columns:
-        df[column] = df[column].astype("string").str.strip()
+
+        df[column] = (
+            df[column]
+            .astype("string")
+            .str.strip()
+        )
+
         df[column] = df[column].replace("", pd.NA)
 
     return df
@@ -30,11 +38,15 @@ def convert_column_types(df, schema):
         data_type = details["data_type"]
 
         if data_type == "identifier":
-            # Preserve identifiers as strings.
-            # This prevents loss of leading zeros.
-            df[column] = df[column].astype("string").str.strip()
+
+            df[column] = (
+                df[column]
+                .astype("string")
+                .str.strip()
+            )
 
         elif data_type == "numeric":
+
             cleaned_values = (
                 df[column]
                 .astype("string")
@@ -47,6 +59,7 @@ def convert_column_types(df, schema):
             )
 
         elif data_type == "date":
+
             df[column] = pd.to_datetime(
                 df[column],
                 format="mixed",
@@ -81,22 +94,28 @@ def convert_column_types(df, schema):
 def transform_universal(df):
     """
     Automatically standardize, clean and convert an unknown dataset.
+
     No dataset profile or manual column configuration is required.
     """
 
     print("\n========== UNIVERSAL TRANSFORMATION STARTED ==========")
 
-    # Detect schema and standardize column names.
-    df, schema = detect_schema(df)
+    # STEP 1: Standardize column names.
+    df = standardize_column_names(df)
 
     print("Column names standardized successfully.")
 
-    # Clean text values.
+    # STEP 2: Clean text and missing values.
     df = clean_text_columns(df)
 
     print("Text columns cleaned successfully.")
 
-    # Convert data types.
+    # STEP 3: Detect schema after cleaning.
+    df, schema = detect_schema(df)
+
+    print("Automatic schema detection completed.")
+
+    # STEP 4: Convert detected data types.
     df = convert_column_types(df, schema)
 
     print("Automatic data type conversion completed.")
