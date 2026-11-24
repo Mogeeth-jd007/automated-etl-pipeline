@@ -15,6 +15,12 @@ from .issue_tracker import (
     generate_issue_summary
 )
 
+from .classification_engine import (
+    classify_records,
+    generate_classification_summary,
+    validate_classification_summary
+)
+
 
 def validate_universal(
     df,
@@ -32,8 +38,11 @@ def validate_universal(
     contact_columns=None
 ):
     """
-    Execute all seven validation modules and generate
-    record-level quality explanations.
+    Execute seven validation modules, collect quality reasons,
+    and integrate the intelligent classification engine.
+
+    Existing classification masks remain authoritative during
+    this integration stage.
 
     Returns:
         valid_records,
@@ -151,7 +160,7 @@ def validate_universal(
 
     contact_report = contact_result["report"]
 
-    # STEP 9: Combine existing classification masks.
+    # STEP 9: Existing classification masks.
 
     warning_mask = (
         missing_result["warning_rows"]
@@ -170,7 +179,7 @@ def validate_universal(
         | contact_result["rejected_rows"]
     )
 
-    # Rejection has priority over warning.
+    # Rejection takes priority over warning.
 
     warning_mask = warning_mask & ~rejected_mask
 
@@ -179,6 +188,12 @@ def validate_universal(
     df.loc[warning_mask, "quality_status"] = "WARNING"
 
     df.loc[rejected_mask, "quality_status"] = "REJECTED"
+
+    # Preserve the original classification for comparison.
+
+    legacy_statuses = (
+        df["quality_status"].astype(str).tolist()
+    )
 
     # STEP 10: Collect record-level issue explanations.
 
@@ -192,15 +207,18 @@ def validate_universal(
         contact_result=contact_result
     )
 
-    # Make explanations agree with actual classification.
+    if len(quality_details) != len(df):
+        raise ValueError(
+            "Issue tracker returned an incorrect record count."
+        )
 
-    quality_reasons_column = []
+    # Ensure every classified record has an explanation.
 
     for position, detail in enumerate(quality_details):
 
-        actual_status = df.iloc[position]["quality_status"]
+        actual_status = legacy_statuses[position]
 
-        detail["quality_status"] = actual_status
+        detail["legacy_status"] = actual_status
 
         if (
             actual_status != "VALID"
@@ -216,6 +234,69 @@ def validate_universal(
                 )
             })
 
+    # STEP 11: Run the intelligent classification engine.
+
+    print("\n========== INTELLIGENT CLASSIFICATION ==========")
+
+    engine_results = classify_records(
+        quality_details
+    )
+
+    classification_matches = 0
+    classification_mismatches = 0
+    mismatch_details = []
+
+    final_statuses = []
+
+    for position, result in enumerate(engine_results):
+
+        legacy_status = legacy_statuses[position]
+
+        engine_status = result["quality_status"]
+
+        matches = engine_status == legacy_status
+
+        if matches:
+
+            final_status = engine_status
+            classification_matches += 1
+
+        else:
+
+            # Preserve existing behaviour during integration.
+
+            final_status = legacy_status
+            classification_mismatches += 1
+
+            mismatch_details.append({
+                "row_position": position,
+                "legacy_status": legacy_status,
+                "engine_status": engine_status
+            })
+
+        result["engine_status"] = engine_status
+        result["legacy_status"] = legacy_status
+        result["classification_match"] = matches
+        result["classification_source"] = (
+            "intelligent_engine"
+            if matches
+            else "legacy_compatibility"
+        )
+
+        result["quality_status"] = final_status
+
+        final_statuses.append(final_status)
+
+    # STEP 12: Assign final classification.
+
+    df["quality_status"] = final_statuses
+
+    # STEP 13: Store quality reasons as JSON strings.
+
+    quality_reasons_column = []
+
+    for detail in engine_results:
+
         quality_reasons_column.append(
             json.dumps(
                 detail["quality_reasons"],
@@ -225,11 +306,39 @@ def validate_universal(
 
     df["quality_reasons"] = quality_reasons_column
 
+    # STEP 14: Generate issue and classification summaries.
+
     issue_summary = generate_issue_summary(
-        quality_details
+        engine_results
     )
 
-    # STEP 11: Separate records.
+    classification_summary = (
+        generate_classification_summary(
+            engine_results
+        )
+    )
+
+    validate_classification_summary(
+        classification_summary
+    )
+
+    classification_audit = {
+        "total_records": int(len(df)),
+        "matching_records": int(classification_matches),
+        "mismatching_records": int(classification_mismatches),
+        "classification_match_rate": (
+            round(
+                classification_matches / len(df) * 100,
+                2
+            )
+            if len(df) > 0
+            else 100.0
+        ),
+        "mismatch_details": mismatch_details,
+        "legacy_classification_preserved": True
+    }
+
+    # STEP 15: Separate records.
 
     valid_records = df[
         df["quality_status"] == "VALID"
@@ -243,7 +352,7 @@ def validate_universal(
         df["quality_status"] == "REJECTED"
     ].copy()
 
-    # STEP 12: Generate complete quality report.
+    # STEP 16: Generate complete quality report.
 
     report = {
         "total_records": int(len(df)),
@@ -305,19 +414,76 @@ def validate_universal(
         "date_summary": date_report,
         "contact_summary": contact_report,
 
-        # NEW: Centralized issue tracking.
+        # Centralized issue tracking.
 
         "issue_summary": issue_summary,
-        "record_quality_details": quality_details
+        "record_quality_details": engine_results,
+
+        # Intelligent classification.
+
+        "classification_summary": classification_summary,
+        "classification_audit": classification_audit
     }
 
-    # STEP 13: Console reporting.
+    # STEP 17: Console reporting.
+
+    print("\nCLASSIFICATION ENGINE SUMMARY")
+
+    print(
+        "Total records:",
+        classification_summary["total_records"]
+    )
+
+    print(
+        "VALID:",
+        classification_summary["valid_records"]
+    )
+
+    print(
+        "WARNING:",
+        classification_summary["warning_records"]
+    )
+
+    print(
+        "REJECTED:",
+        classification_summary["rejected_records"]
+    )
+
+    print("\nCLASSIFICATION AUDIT")
+
+    print(
+        "Matching records:",
+        classification_audit["matching_records"]
+    )
+
+    print(
+        "Mismatching records:",
+        classification_audit["mismatching_records"]
+    )
+
+    print(
+        "Match rate:",
+        f"{classification_audit['classification_match_rate']}%"
+    )
+
+    if mismatch_details:
+
+        print("\nCLASSIFICATION MISMATCHES")
+
+        for mismatch in mismatch_details:
+            print(mismatch)
 
     print("\n========== DATA QUALITY REPORT ==========")
 
     for key, value in report.items():
 
-        if not key.endswith("_summary") and key != "record_quality_details":
+        if (
+            not key.endswith("_summary")
+            and key not in {
+                "record_quality_details",
+                "classification_audit"
+            }
+        ):
             print(f"{key}: {value}")
 
     print("\n========== RECORD-LEVEL ISSUE SUMMARY ==========")
@@ -351,7 +517,7 @@ def validate_universal(
 
     print("\n========== UNIVERSAL VALIDATION COMPLETED ==========\n")
 
-    # STEP 14: Preserve original four-value return structure.
+    # STEP 18: Preserve original four-value return structure.
 
     return (
         valid_records,
