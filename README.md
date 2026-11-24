@@ -1,338 +1,443 @@
-\Automated ETL Pipeline
+# Automated ETL Pipeline
 
-An automated and universal ETL pipeline designed to
-extract, clean, transform, validate, and load different
-CSV datasets with minimal manual intervention.
+A universal, configuration-driven ETL pipeline designed to automatically extract, clean, transform, validate, classify, and load CSV datasets into SQLite databases.
 
+The project supports multiple dataset types through intelligent schema detection, automated data transformation, advanced data-quality validation, and configurable quality scoring.
 
+---
 
-\Project Overview
+## 1. Project Overview
 
+The Automated ETL Pipeline is designed to process different CSV datasets without requiring manually defined transformation rules for every new dataset.
 
+The pipeline identifies column structures, detects logical data types, normalizes data, performs validation, classifies records, calculates quality scores, and generates structured output reports.
 
-This project demonstrates an end-to-end ETL workflow using three datasets:
+### Supported Datasets
 
+- Retail sales
+- Employee records
+- Student records
+- Hospital patient records
+- Contact validation datasets
+- Custom CSV datasets
 
+---
 
-\- Retail sales
+## 2. Technology Stack
 
-\- Employees
+| Technology | Purpose |
+|---|---|
+| Python | Pipeline development |
+| Pandas | Data manipulation and processing |
+| SQLite | Database storage |
+| SQL | Data analysis |
+| Pytest | Automated testing |
+| JSON | Configuration and reporting |
+| Git | Version control |
+| GitHub | Source-code management |
 
-\- Students
+---
 
-\- Custom CSV datasets
-
-
-
-Each dataset has its own configuration profile, validation rules, output files, and SQLite database.
-
-
-
-\Technology Stack
-
-
-
-\- Python
-
-\- Pandas
-
-\- SQLite
-
-\- SQL
-
-\- Pytest
-
-\- Git and GitHub
-
-
-
-\Project Structure
-
-
+## 3. Project Architecture
 
 ```text
-
-retail-sales-data-pipeline/
-
-├── dashboard/
-
+Automated ETL Pipeline/
+│
 ├── data/
-
 │   ├── raw/
-
 │   ├── processed/
-
 │   ├── rejected/
-
-│   └── \*.db
-
+│   └── universal_pipeline.db
+│
+├── reports/
+│   └── Quality reports (JSON)
+│
 ├── logs/
-
+│
 ├── sql/
-
-│   ├── retail\_sales\_analysis.sql
-
-│   ├── employee\_analysis.sql
-
-│   └── student\_analysis.sql
-
+│   ├── retail_sales_analysis.sql
+│   ├── employee_analysis.sql
+│   └── student_analysis.sql
+│
 ├── src/
-
+│   ├── universal/
+│   │   ├── universal_pipeline.py
+│   │   ├── universal_extract.py
+│   │   ├── universal_transform.py
+│   │   ├── universal_validate.py
+│   │   ├── universal_load.py
+│   │   ├── schema_detector.py
+│   │   ├── text_handler.py
+│   │   ├── missing_value_handler.py
+│   │   ├── numeric_handler.py
+│   │   ├── datetime_handler.py
+│   │   ├── boolean_handler.py
+│   │   ├── financial_handler.py
+│   │   ├── conversion_tracker.py
+│   │   ├── issue_tracker.py
+│   │   ├── classification_engine.py
+│   │   ├── quality_scorer.py
+│   │   └── report_generator.py
+│   │
 │   ├── extract.py
-
 │   ├── transform.py
-
 │   ├── validate.py
-
 │   ├── load.py
-
 │   ├── config.py
-
 │   ├── logger.py
-
-│   ├── main.py
-
-│   └── verify.py
-
+│   └── main.py
+│
 ├── tests/
-
+│
 ├── config.json
-
 ├── requirements.txt
-
 └── README.md
-
 ```
 
+---
 
+## 4. ETL Workflow
 
-\ETL Workflow
+The universal pipeline follows five major stages.
 
+### Stage 1: Extraction
 
+- Accept CSV input files.
+- Resolve input file paths.
+- Detect CSV encoding.
+- Detect CSV delimiters.
+- Validate CSV structure.
+- Extract records and columns.
 
-1\. Extract data from CSV files.
+### Stage 2: Transformation
 
-2\. Standardize column names and clean text.
+- Standardize column names.
+- Normalize text values.
+- Handle missing-value representations.
+- Automatically detect logical data types.
+- Convert numeric values.
+- Process financial values and currency units.
+- Parse date and timestamp formats.
+- Standardize Boolean values.
+- Protect identifier columns.
+- Track conversion failures.
 
-3\. Detect numeric data types and convert configured dates.
+### Stage 3: Validation
 
-4\. Calculate total sales where applicable.
+The pipeline uses seven validation modules:
 
-5\. Validate records using dataset-specific rules.
+1. Missing-value validation.
+2. Duplicate validation.
+3. Identifier validation.
+4. Conversion-failure validation.
+5. Numeric validation.
+6. Date validation.
+7. Contact validation.
 
-6\. Classify records as VALID, WARNING, or REJECTED.
+Additional checks include:
 
-7\. Save validation results into separate CSV files.
+- Invalid email addresses.
+- Invalid phone numbers.
+- Numeric outliers.
+- Numeric range violations.
+- Invalid dates.
+- Future dates.
+- Date-range violations.
+- Chronological violations.
+- Timezone mismatches.
 
-8\. Load VALID and WARNING records into SQLite.
+### Stage 4: Intelligent Classification
 
-9\. Perform SQL analytics on the loaded datasets.
+Records are classified into three categories.
 
-
-
-\## Data Quality Classification
-
-
-
-| Status | Description |
-
+| Classification | Description |
 |---|---|
+| VALID | Records passing applicable validation rules |
+| WARNING | Records containing non-critical data-quality issues |
+| REJECTED | Records containing critical data-quality issues |
 
-| VALID | Records pass all configured checks |
+The classification engine also generates record-level explanations and classification summaries.
 
-| WARNING | Records contain non-critical missing values |
+### Stage 5: Database Loading and Reporting
 
-| REJECTED | Records contain critical data-quality issues |
+The pipeline:
 
+- Loads eligible VALID and WARNING records.
+- Creates dynamically structured SQLite tables.
+- Generates processed CSV files.
+- Separates valid, warning and rejected records.
+- Generates comprehensive JSON quality reports.
 
+---
 
-\Supported Datasets
+## 5. Intelligent Data Quality Scoring
 
+The pipeline includes a configurable data-quality scoring engine.
 
+Each record receives a score between 0 and 100.
 
-| Dataset | Database | Table |
+### Scoring Formula
 
-|---|---|---|
+Quality Score = Maximum Score − Total Issue Penalties
 
-| Retail | retail\_sales.db | retail\_sales |
+The minimum possible score is zero.
 
-| Employee | employee\_data.db | employees |
+### Default Quality Grades
 
-| Student | student\_data.db | students |
+| Score | Grade |
+|---|---|
+| 90–100 | EXCELLENT |
+| 75–89 | GOOD |
+| 60–74 | FAIR |
+| 40–59 | POOR |
+| 0–39 | CRITICAL |
 
+### Configurable Penalties
 
+Scoring penalties are maintained in `config.json`.
 
-\Running the Pipeline
+Examples:
 
+| Issue | Default Penalty |
+|---|---:|
+| Invalid email | 10 |
+| Invalid phone | 10 |
+| Missing value | 8 |
+| Conversion failure | 12 |
+| Numeric outlier | 8 |
+| Future date | 8 |
+| Duplicate record | 40 |
+| Empty record | 50 |
 
+The scoring engine supports custom penalty values without modifying the Python scoring module.
 
-Activate the virtual environment:
+### Record-Level Scoring
 
+Each processed record receives:
 
+- `quality_status`
+- `quality_reasons`
+- `quality_score`
+- `quality_grade`
+
+### Dataset-Level Scoring
+
+The pipeline calculates:
+
+- Average dataset quality score.
+- Overall dataset quality grade.
+- Minimum record score.
+- Maximum record score.
+- Quality-grade distribution.
+
+Classification and numerical quality scoring operate independently.
+
+---
+
+## 6. Configuration Management
+
+The project uses `config.json` for centralized configuration.
+
+It maintains:
+
+- Active dataset selection.
+- Dataset profiles.
+- Input and output directories.
+- Database settings.
+- Validation requirements.
+- Transformation settings.
+- Quality-scoring penalties.
+- Severity-based fallback penalties.
+
+This approach makes the pipeline easier to maintain and extend.
+
+---
+
+## 7. Supported Output Formats
+
+| Output | Purpose |
+|---|---|
+| Processed CSV | Complete transformed and classified records |
+| Valid CSV | Valid records |
+| Warning CSV | Records containing warnings |
+| Rejected CSV | Rejected records |
+| JSON | Detailed data-quality and transformation reports |
+| SQLite | Structured database storage |
+
+The universal pipeline uses a dynamically generated table for each input dataset.
+
+---
+
+## 8. Running the Pipeline
+
+### Activate the virtual environment
 
 ```powershell
-
-.\\.venv\\Scripts\\Activate.ps1
-
+.\.venv\Scripts\Activate.ps1
 ```
 
+### Universal automated pipeline
 
+Place your CSV file inside:
 
-Run the retail pipeline:
+```text
+data/raw/
+```
 
-
+Run:
 
 ```powershell
+python src/main.py --file your_dataset.csv
+```
 
+Example:
+
+```powershell
+python src/main.py --file contact_validation_test.csv
+```
+
+The universal pipeline automatically performs extraction, transformation, validation, classification, quality scoring, database loading and report generation.
+
+### Existing dataset profiles
+
+Retail:
+
+```powershell
 python src/main.py --dataset retail
-
 ```
 
-
-
-Run the employee pipeline:
-
-
+Employee:
 
 ```powershell
-
 python src/main.py --dataset employee
-
 ```
 
-
-
-Run the student pipeline:
-
-
+Student:
 
 ```powershell
-
 python src/main.py --dataset student
-
 ```
 
+---
 
+## 9. Database
 
-\SQL Analytics
+The project uses SQLite for persistent data storage.
 
+The universal pipeline stores processed eligible records in:
 
+```text
+data/universal_pipeline.db
+```
 
-Three SQL scripts provide analytical queries.
+The table name is generated from the input CSV filename.
 
+The database stores:
 
+- Original dataset columns.
+- Transformed values.
+- Quality classification.
+- Quality scores.
+- Quality grades.
+- Quality explanations.
 
-\Retail Sales
+---
 
-\- Total sales revenue
+## 10. Automated Testing
 
-\- Total orders
+The project uses Pytest for unit testing and integration testing.
 
-\- Product-wise revenue
+Test coverage includes:
 
-\- Category-wise revenue
+- Extraction.
+- Transformation.
+- Schema detection.
+- Data-type conversion.
+- Missing-value handling.
+- Date and numeric processing.
+- Validation modules.
+- Issue tracking.
+- Classification.
+- Quality scoring.
+- Database loading.
+- Pipeline integration.
 
-\- Monthly sales
-
-\- Top customers
-
-\- Average order value
-
-
-
-\Employee
-
-\- Total employees
-
-\- Average salary
-
-\- Department-wise employee count
-
-\- Top five highest-paid employees
-
-
-
-\Student
-
-\- Total students
-
-\- Average marks
-
-\- Course-wise student count
-
-\- Top five students by marks
-
-
-
-\Automated Testing
-
-
-
-The project uses Pytest for unit and integration testing.
-
-
-
-Run all tests:
-
-
+### Run all tests
 
 ```powershell
-
-$env:PYTHONPATH = "src"
-
-pytest -v
-
+python -m pytest -v
 ```
 
+### Run quality scoring tests
 
+```powershell
+python -m pytest tests/test_quality_scorer.py -v
+```
 
-The latest verified test suite contains 16 passing tests.
+### Run classification tests
 
+```powershell
+python -m pytest tests/test_classification_engine.py -v
+```
 
+**Latest confirmed full regression result: 394 tests passed.**
 
-\Logging
+---
 
+## 11. Logging
 
+Centralized logging is implemented to monitor pipeline execution.
 
-Centralized logging records pipeline execution, extraction, transformation, validation, classification, and database loading activities in the `logs/` directory.
+Logs capture:
 
+- Extraction activities.
+- Transformation operations.
+- Validation results.
+- Classification results.
+- Database loading.
+- Pipeline execution errors.
 
+Log files are maintained in the `logs/` directory.
 
-\Skills Demonstrated
+---
 
+## 12. Skills Demonstrated
 
+- Python programming.
+- Pandas data processing.
+- Universal ETL architecture.
+- Automated schema detection.
+- Data cleaning and transformation.
+- Data-quality engineering.
+- Intelligent record classification.
+- Configurable quality scoring.
+- JSON configuration management.
+- SQLite database integration.
+- SQL analytics.
+- Unit and integration testing.
+- Git and GitHub.
 
-\- Python programming
+---
 
-\- Data extraction and transformation
+## 13. Future Improvements
 
-\- Data quality validation
+Potential future enhancements include:
 
-\- Configuration-driven development
+- Automated file discovery and monitoring.
+- Scheduled pipeline execution.
+- Failure recovery and retry mechanisms.
+- Pipeline execution history.
+- Dashboard integration.
+- Cloud storage integration.
+- Azure Data Engineering integration.
+- Apache Airflow orchestration.
+- Large-scale processing with Apache Spark.
+- Advanced data-quality monitoring.
 
-\- SQLite database operations
+---
 
-\- SQL analytical queries
+## 14. Project Objective
 
-\- Unit and integration testing
+The primary objective of this project is to develop a reusable and extensible ETL system capable of processing different CSV datasets with minimal manual intervention.
 
-\- Git version control
-
-
-
-\Future Improvements
-
-
-
-\- Dashboard integration
-
-\- Advanced SQL analytics
-
-\- Cloud data warehouse integration
-
-\- Apache Airflow orchestration
-
-\- Automated pipeline scheduling
-
-
-
+The project demonstrates practical data engineering concepts, including automated extraction, intelligent transformation, data validation, classification, quality measurement, database integration, reporting and automated testing.

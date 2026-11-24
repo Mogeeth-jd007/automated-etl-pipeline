@@ -1,28 +1,22 @@
-
 {
     "active_dataset": "retail",
-
     "directories": {
         "raw": "data/raw",
         "processed": "data/processed",
         "rejected": "data/rejected"
     },
-
     "datasets": {
         "retail": {
             "input_file": "retail_sales.csv",
-
             "database": {
                 "file": "data/retail_sales.db",
                 "table": "retail_sales"
             },
-
             "validation_files": {
                 "valid": "retail_valid_records.csv",
                 "warnings": "retail_warning_records.csv",
                 "rejected": "retail_rejected_records.csv"
             },
-
             "validation": {
                 "required_columns": [
                     "order_id",
@@ -47,7 +41,6 @@
                     "order_id"
                 ]
             },
-
             "transformation": {
                 "date_columns": [
                     "order_date"
@@ -58,21 +51,17 @@
                 "total_column": "total_amount"
             }
         },
-
         "employee": {
             "input_file": "employees.csv",
-
             "database": {
                 "file": "data/employee_data.db",
                 "table": "employees"
             },
-
             "validation_files": {
                 "valid": "employee_valid_records.csv",
                 "warnings": "employee_warning_records.csv",
                 "rejected": "employee_rejected_records.csv"
             },
-
             "validation": {
                 "required_columns": [
                     "employee_id",
@@ -95,7 +84,6 @@
                     "employee_id"
                 ]
             },
-
             "transformation": {
                 "date_columns": [
                     "joining_date"
@@ -103,21 +91,17 @@
                 "calculate_total": false
             }
         },
-
         "student": {
             "input_file": "students.csv",
-
             "database": {
                 "file": "data/student_data.db",
                 "table": "students"
             },
-
             "validation_files": {
                 "valid": "student_valid_records.csv",
                 "warnings": "student_warning_records.csv",
                 "rejected": "student_rejected_records.csv"
             },
-
             "validation": {
                 "required_columns": [
                     "student_id",
@@ -140,13 +124,35 @@
                     "student_id"
                 ]
             },
-
             "transformation": {
                 "date_columns": [
                     "enrollment_date"
                 ],
                 "calculate_total": false
             }
+        }
+    },
+    "quality_scoring": {
+        "penalties": {
+            "INVALID_EMAIL": 10,
+            "INVALID_PHONE": 10,
+            "MISSING_VALUE": 8,
+            "CONVERSION_FAILURE": 12,
+            "NUMERIC_OUTLIER": 8,
+            "FUTURE_DATE": 8,
+            "MISSING_REQUIRED_VALUE": 30,
+            "DUPLICATE_RECORD": 40,
+            "EXACT_DUPLICATE": 40,
+            "DUPLICATE_KEY": 40,
+            "EMPTY_RECORD": 50,
+            "NUMERIC_RANGE_VIOLATION": 25,
+            "DATE_RANGE_VIOLATION": 25,
+            "INVALID_DATE": 12,
+            "QUALITY_VALIDATION_FAILURE": 10
+        },
+        "severity_penalties": {
+            "WARNING": 5,
+            "REJECTED": 25
         }
     }
 }
