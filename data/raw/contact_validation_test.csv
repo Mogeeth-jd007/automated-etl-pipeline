@@ -1,0 +1,8 @@
+﻿record_id,email,mobile
+001,arun@example.com,09876543210
+002,meena@example.com,+91 98765 43210
+003,invalid-email,+1 (202) 555-0147
+004,ravi@example.com,123
+005,divya@example..com,abc123xyz
+006,,
+007,priya@example.com,01234567890

@@ -6,6 +6,11 @@ from .financial_handler import infer_financial_type
 from .datetime_handler import infer_datetime_type
 from .boolean_handler import infer_boolean_type
 
+from .contact_detector import (
+    is_email_column,
+    is_phone_column
+)
+
 
 IDENTIFIER_NAMES = {
     "id", "sku", "upc", "isbn", "uuid",
@@ -58,9 +63,21 @@ def standardize_column_names(df):
 
 
 def is_identifier_column(column_name):
-    """Protect identifier columns from unwanted conversion."""
+    """Protect identifier and phone columns from conversion."""
 
     name = column_name.lower()
+
+    # Email columns are textual contact information.
+
+    if is_email_column(name):
+
+        return False
+
+    # Protect phone numbers from numeric conversion.
+
+    if is_phone_column(name):
+
+        return True
 
     return (
         name in IDENTIFIER_NAMES
@@ -77,29 +94,44 @@ def looks_like_date(values):
 def infer_column_type(column_name, series):
     """Automatically infer a column's logical data type."""
 
+    # Preserve email addresses as text.
+
+    if is_email_column(column_name):
+
+        return "text"
+
+    # Preserve identifiers and phone numbers.
+
     if is_identifier_column(column_name):
+
         return "identifier"
 
     values = series.dropna()
 
     if values.empty:
+
         return "text"
 
     # Context-aware Boolean detection.
+
     if infer_boolean_type(column_name, values):
+
         return "boolean"
 
     financial_type = infer_financial_type(values)
 
     if financial_type is not None:
+
         return financial_type
 
     if looks_like_date(values):
+
         return "date"
 
     numeric_values = clean_numeric_series(values)
 
     if numeric_values.notna().mean() >= 0.8:
+
         return "numeric"
 
     return "text"
