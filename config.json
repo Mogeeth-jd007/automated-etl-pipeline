@@ -154,5 +154,11 @@
             "WARNING": 5,
             "REJECTED": 25
         }
+    },
+    "retry": {
+        "enabled": true,
+        "max_attempts": 3,
+        "base_delay_seconds": 2,
+        "max_delay_seconds": 30
     }
 }
