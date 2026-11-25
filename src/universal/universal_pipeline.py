@@ -35,7 +35,6 @@ except ImportError:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Only stages without external write side effects are retry-enabled.
 RETRY_SAFE_STAGES = {
     "EXTRACT",
     "TRANSFORM",
@@ -51,7 +50,6 @@ def resolve_input_file(input_file):
 
     if path.is_absolute():
         resolved_path = path
-
     else:
         candidates = [
             PROJECT_ROOT / path,
@@ -81,7 +79,7 @@ def resolve_input_file(input_file):
 
 
 def load_quality_scoring_config():
-    """Load and validate global quality scoring configuration."""
+    """Load and validate quality scoring configuration."""
 
     config = load_config()
 
@@ -148,6 +146,90 @@ def load_retry_config():
     }
 
 
+def load_date_validation_config():
+    """Load and validate date-specific validation rules."""
+
+    config = load_config()
+
+    date_config = config.get(
+        "universal_date_validation",
+        {}
+    )
+
+    if not isinstance(date_config, dict):
+        raise ValueError(
+            "universal_date_validation must be a dictionary."
+        )
+
+    allowed_options = {
+        "date_ranges",
+        "no_future_columns",
+        "chronological_rules",
+        "reference_time"
+    }
+
+    unknown_options = set(date_config) - allowed_options
+
+    if unknown_options:
+        raise ValueError(
+            f"Unknown date validation options: "
+            f"{sorted(unknown_options)}"
+        )
+
+    date_ranges = date_config.get("date_ranges", {})
+    no_future_columns = date_config.get(
+        "no_future_columns",
+        []
+    )
+    chronological_rules = date_config.get(
+        "chronological_rules",
+        []
+    )
+    reference_time = date_config.get("reference_time")
+
+    if not isinstance(date_ranges, dict):
+        raise ValueError(
+            "date_ranges must be a dictionary."
+        )
+
+    if (
+        not isinstance(no_future_columns, list)
+        or not all(
+            isinstance(column, str) and column
+            for column in no_future_columns
+        )
+    ):
+        raise ValueError(
+            "no_future_columns must be a list of column names."
+        )
+
+    if not isinstance(chronological_rules, list):
+        raise ValueError(
+            "chronological_rules must be a list."
+        )
+
+    for rule in chronological_rules:
+        if (
+            not isinstance(rule, (list, tuple))
+            or len(rule) != 2
+            or not all(
+                isinstance(column, str) and column
+                for column in rule
+            )
+        ):
+            raise ValueError(
+                "Each chronological rule must contain "
+                "two column names."
+            )
+
+    return {
+        "date_ranges": date_ranges,
+        "no_future_columns": no_future_columns,
+        "chronological_rules": chronological_rules,
+        "reference_time": reference_time
+    }
+
+
 def run_monitored_stage(
     execution,
     stage_name,
@@ -180,10 +262,7 @@ def run_monitored_stage(
 
             def on_retry(attempt, error, delay):
 
-                print(
-                    f"\nRETRY: {stage_name}"
-                )
-
+                print(f"\nRETRY: {stage_name}")
                 print(f"Failed attempt: {attempt}")
                 print(f"Error: {error}")
                 print(f"Waiting: {delay} seconds")
@@ -200,7 +279,6 @@ def run_monitored_stage(
             )
 
         else:
-
             result = operation()
 
         stage_result = complete_stage(stage)
@@ -258,16 +336,22 @@ def run_universal_pipeline(input_file):
     def get_record_counts():
 
         if report is not None:
-
             return {
-                "total_records": int(report.get("total_records", 0)),
-                "valid_records": int(report.get("valid_records", 0)),
-                "warning_records": int(report.get("warning_records", 0)),
-                "rejected_records": int(report.get("rejected_records", 0))
+                "total_records": int(
+                    report.get("total_records", 0)
+                ),
+                "valid_records": int(
+                    report.get("valid_records", 0)
+                ),
+                "warning_records": int(
+                    report.get("warning_records", 0)
+                ),
+                "rejected_records": int(
+                    report.get("rejected_records", 0)
+                )
             }
 
         if df is not None:
-
             return {
                 "total_records": int(len(df)),
                 "valid_records": int(len(valid)),
@@ -292,7 +376,7 @@ def run_universal_pipeline(input_file):
         print("Base delay:", retry_config["base_delay_seconds"])
         print("Maximum delay:", retry_config["max_delay_seconds"])
 
-        # STEP 1: EXTRACT
+        # STEP 1: EXTRACTION
 
         def extract_operation():
 
@@ -300,23 +384,26 @@ def run_universal_pipeline(input_file):
 
             print(f"Input file: {file_path}")
 
-            
             extraction_config = load_config().get(
                 "universal_extraction",
                 {}
             )
-            return file_path, extract_universal(
+
+            return (
                 file_path,
-                config=extraction_config
+                extract_universal(
+                    file_path,
+                    config=extraction_config
+                )
             )
-            
 
         file_path, df = run_monitored_stage(
             execution,
             "EXTRACT",
             extract_operation,
             retry_config,
-            retry_config["enabled"] and "EXTRACT" in RETRY_SAFE_STAGES
+            retry_config["enabled"]
+            and "EXTRACT" in RETRY_SAFE_STAGES
         )
 
         dataset_name = file_path.stem
@@ -324,7 +411,7 @@ def run_universal_pipeline(input_file):
         print(f"Execution ID: {execution_id}")
         print(f"Dataset name: {dataset_name}")
 
-        # STEP 2: TRANSFORM
+        # STEP 2: TRANSFORMATION
 
         transformation_config = load_config().get(
             "universal_transformation",
@@ -335,30 +422,37 @@ def run_universal_pipeline(input_file):
             execution,
             "TRANSFORM",
             lambda: transform_universal(
-                 df,
+                df,
                 config=transformation_config
             ),
             retry_config,
-            retry_config["enabled"] and "TRANSFORM" in RETRY_SAFE_STAGES
+            retry_config["enabled"]
+            and "TRANSFORM" in RETRY_SAFE_STAGES
         )
 
-        # STEP 3: SCORING CONFIGURATION
+        # STEP 3: QUALITY SCORING CONFIGURATION
 
         scoring_penalties, severity_penalties = run_monitored_stage(
             execution,
             "SCORING_CONFIGURATION",
             load_quality_scoring_config,
             retry_config,
-            retry_config["enabled"] and "SCORING_CONFIGURATION" in RETRY_SAFE_STAGES
+            retry_config["enabled"]
+            and "SCORING_CONFIGURATION" in RETRY_SAFE_STAGES
         )
 
+        # STEP 4: VALIDATION CONFIGURATION
 
-        # STEP 4: VALIDATION
+        pipeline_config = load_config()
 
-        validation_config = load_config().get(
+        validation_config = pipeline_config.get(
             "universal_validation",
             {}
         )
+
+        date_validation_config = load_date_validation_config()
+
+        # STEP 5: VALIDATION
 
         valid, warning, rejected, report = run_monitored_stage(
             execution,
@@ -368,17 +462,25 @@ def run_universal_pipeline(input_file):
                 schema=schema,
                 scoring_penalties=scoring_penalties,
                 scoring_severity_penalties=severity_penalties,
-                validation_config=validation_config
+                validation_config=validation_config,
+                date_ranges=date_validation_config["date_ranges"],
+                no_future_columns=date_validation_config[
+                    "no_future_columns"
+                ],
+                chronological_rules=date_validation_config[
+                    "chronological_rules"
+                ],
+                reference_time=date_validation_config[
+                    "reference_time"
+                ]
             ),
             retry_config,
-            retry_config["enabled"] and "VALIDATION" in RETRY_SAFE_STAGES
+            retry_config["enabled"]
+            and "VALIDATION" in RETRY_SAFE_STAGES
         )
 
-
-        
-
-        # STEP 5: DATABASE LOAD
-        # Deliberately excluded from automatic retries.
+        # STEP 6: DATABASE LOAD
+        # Database writes are deliberately excluded from retries.
 
         def database_operation():
 
@@ -399,8 +501,8 @@ def run_universal_pipeline(input_file):
             retry_enabled=False
         )
 
-        # STEP 6: REPORT GENERATION
-        # Deliberately excluded from automatic retries.
+        # STEP 7: REPORT GENERATION
+        # Report writes are deliberately excluded from retries.
 
         report_files = run_monitored_stage(
             execution,
@@ -416,6 +518,8 @@ def run_universal_pipeline(input_file):
             retry_config,
             retry_enabled=False
         )
+
+        # STEP 8: COMPLETE EXECUTION
 
         execution_result = complete_execution(
             execution,
@@ -480,7 +584,9 @@ def run_universal_pipeline(input_file):
                 **get_record_counts()
             )
 
-            print("Complete execution failure diagnostics saved.")
+            print(
+                "Complete execution failure diagnostics saved."
+            )
 
         except Exception as tracking_error:
 

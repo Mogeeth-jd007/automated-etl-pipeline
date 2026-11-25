@@ -1,11 +1,14 @@
+
 {
     "active_dataset": "retail",
+
     "universal_extraction": {
         "encoding": "auto",
         "delimiter": "auto",
         "header": true,
         "on_bad_lines": "error"
     },
+
     "universal_transformation": {
         "standardize_columns": true,
         "clean_text": true,
@@ -17,6 +20,7 @@
         "detect_booleans": true,
         "track_conversion_failures": true
     },
+
     "universal_validation": {
         "missing_values": {
             "enabled": true
@@ -40,6 +44,16 @@
             "enabled": true
         }
     },
+
+    "universal_date_validation": {
+        "date_ranges": {},
+        "no_future_columns": [
+            "transaction_date"
+        ],
+        "chronological_rules": [],
+        "reference_time": null
+    },
+
     "datasets": {
         "retail": {
             "input_file": "retail_sales.csv",
@@ -86,6 +100,7 @@
                 "total_column": "total_amount"
             }
         },
+
         "employee": {
             "input_file": "employees.csv",
             "database": {
@@ -126,6 +141,7 @@
                 "calculate_total": false
             }
         },
+
         "student": {
             "input_file": "students.csv",
             "database": {
@@ -167,6 +183,7 @@
             }
         }
     },
+
     "quality_scoring": {
         "penalties": {
             "INVALID_EMAIL": 10,
@@ -190,12 +207,14 @@
             "REJECTED": 25
         }
     },
+
     "retry": {
         "enabled": true,
         "max_attempts": 3,
         "base_delay_seconds": 2,
         "max_delay_seconds": 30
     },
+
     "directories": {
         "raw": "data/raw",
         "processed": "data/processed",

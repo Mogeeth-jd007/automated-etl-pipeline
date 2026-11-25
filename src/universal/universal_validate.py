@@ -85,6 +85,22 @@ def validate_universal(
             f"{'ENABLED' if settings['enabled'] else 'DISABLED'}"
         )
 
+    # Resolve date-validation configuration.
+    # Explicit function arguments take precedence over config.json.
+
+    configured_no_future_columns = (
+        validation_settings["dates"].get(
+            "no_future_columns",
+            []
+        )
+    )
+
+    effective_no_future_columns = (
+        no_future_columns
+        if no_future_columns is not None
+        else configured_no_future_columns
+    )
+
     # STEP 2: Protect generated columns.
 
     reserved_columns = {
@@ -204,7 +220,7 @@ def validate_universal(
             df,
             schema=schema,
             date_ranges=date_ranges,
-            no_future_columns=no_future_columns,
+            no_future_columns=effective_no_future_columns,
             chronological_rules=chronological_rules,
             excluded_columns=excluded_columns,
             reference_time=reference_time
