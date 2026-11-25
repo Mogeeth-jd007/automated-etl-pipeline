@@ -1,9 +1,44 @@
 {
     "active_dataset": "retail",
-    "directories": {
-        "raw": "data/raw",
-        "processed": "data/processed",
-        "rejected": "data/rejected"
+    "universal_extraction": {
+        "encoding": "auto",
+        "delimiter": "auto",
+        "header": true,
+        "on_bad_lines": "error"
+    },
+    "universal_transformation": {
+        "standardize_columns": true,
+        "clean_text": true,
+        "normalize_missing_values": true,
+        "auto_convert_types": true,
+        "detect_currency": true,
+        "detect_percentage": true,
+        "detect_dates": true,
+        "detect_booleans": true,
+        "track_conversion_failures": true
+    },
+    "universal_validation": {
+        "missing_values": {
+            "enabled": true
+        },
+        "duplicates": {
+            "enabled": true
+        },
+        "identifiers": {
+            "enabled": true
+        },
+        "conversion": {
+            "enabled": true
+        },
+        "numeric": {
+            "enabled": true
+        },
+        "dates": {
+            "enabled": true
+        },
+        "contacts": {
+            "enabled": true
+        }
     },
     "datasets": {
         "retail": {
@@ -160,5 +195,10 @@
         "max_attempts": 3,
         "base_delay_seconds": 2,
         "max_delay_seconds": 30
+    },
+    "directories": {
+        "raw": "data/raw",
+        "processed": "data/processed",
+        "rejected": "data/rejected"
     }
 }

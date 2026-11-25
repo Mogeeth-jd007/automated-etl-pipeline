@@ -26,6 +26,12 @@ from .quality_scorer import (
     calculate_dataset_quality
 )
 
+from .validation_config import validate_validation_config
+
+from .neutral_validation import (
+    build_neutral_validation_results
+)
+
 
 def validate_universal(
     df,
@@ -42,14 +48,14 @@ def validate_universal(
     reference_time=None,
     contact_columns=None,
     scoring_penalties=None,
-    scoring_severity_penalties=None
+    scoring_severity_penalties=None,
+    validation_config=None
 ):
     """
-    Execute seven validation modules, intelligent classification
-    and record-level/dataset-level quality scoring.
+    Execute configurable validation modules, intelligent
+    classification and quality scoring.
 
-    Existing classification masks remain authoritative whenever
-    the intelligent engine disagrees with legacy classification.
+    All validators are enabled by default.
 
     Returns:
         valid_records,
@@ -62,7 +68,24 @@ def validate_universal(
 
     df = df.copy()
 
-    # STEP 1: Protect generated columns.
+    # STEP 1: Validate configuration.
+
+    validation_settings = validate_validation_config(
+        validation_config
+    )
+
+    neutral_results = build_neutral_validation_results(df)
+
+    print("\nVALIDATION CONFIGURATION")
+
+    for name, settings in validation_settings.items():
+
+        print(
+            f"{name}: "
+            f"{'ENABLED' if settings['enabled'] else 'DISABLED'}"
+        )
+
+    # STEP 2: Protect generated columns.
 
     reserved_columns = {
         "quality_status",
@@ -82,92 +105,136 @@ def validate_universal(
     excluded_columns = set(excluded_columns or [])
 
     if schema is not None:
+
         excluded_columns.update(
             column
             for column, details in schema.items()
             if details.get("generated", False)
         )
 
-    # STEP 2: Missing-value validation.
+    # STEP 3: Missing-value validation.
 
-    missing_result = validate_missing_values(
-        df,
-        required_columns=required_columns,
-        excluded_columns=excluded_columns
-    )
+    if validation_settings["missing_values"]["enabled"]:
+
+        missing_result = validate_missing_values(
+            df,
+            required_columns=required_columns,
+            excluded_columns=excluded_columns
+        )
+
+    else:
+
+        missing_result = neutral_results["missing_values"]
 
     missing_rows = missing_result["missing_rows"]
     empty_rows = missing_result["empty_rows"]
 
-    # STEP 3: Duplicate validation.
+    # STEP 4: Duplicate validation.
 
-    duplicate_result = validate_duplicates(
-        df,
-        key_columns=key_columns,
-        excluded_columns=excluded_columns
-    )
+    if validation_settings["duplicates"]["enabled"]:
+
+        duplicate_result = validate_duplicates(
+            df,
+            key_columns=key_columns,
+            excluded_columns=excluded_columns
+        )
+
+    else:
+
+        duplicate_result = neutral_results["duplicates"]
 
     duplicate_rows = duplicate_result["rejected_rows"]
 
-    # STEP 4: Identifier validation.
+    # STEP 5: Identifier validation.
+    # Identifier validation remains reporting-only.
 
-    identifier_report = validate_identifiers(
-        df,
-        schema=schema,
-        excluded_columns=excluded_columns
-    )
+    if validation_settings["identifiers"]["enabled"]:
 
-    # STEP 5: Conversion validation.
+        identifier_report = validate_identifiers(
+            df,
+            schema=schema,
+            excluded_columns=excluded_columns
+        )
 
-    conversion_result = validate_conversion_failures(
-        df,
-        schema=schema,
-        required_columns=required_columns,
-        excluded_columns=excluded_columns
-    )
+    else:
+
+        identifier_report = neutral_results["identifiers"]
+
+    # STEP 6: Conversion validation.
+
+    if validation_settings["conversion"]["enabled"]:
+
+        conversion_result = validate_conversion_failures(
+            df,
+            schema=schema,
+            required_columns=required_columns,
+            excluded_columns=excluded_columns
+        )
+
+    else:
+
+        conversion_result = neutral_results["conversion"]
 
     conversion_report = conversion_result["report"]
 
-    # STEP 6: Numeric validation.
+    # STEP 7: Numeric validation.
 
-    numeric_result = validate_numeric_values(
-        df,
-        schema=schema,
-        numeric_ranges=numeric_ranges,
-        excluded_columns=excluded_columns,
-        iqr_multiplier=iqr_multiplier,
-        min_samples=min_samples
-    )
+    if validation_settings["numeric"]["enabled"]:
+
+        numeric_result = validate_numeric_values(
+            df,
+            schema=schema,
+            numeric_ranges=numeric_ranges,
+            excluded_columns=excluded_columns,
+            iqr_multiplier=iqr_multiplier,
+            min_samples=min_samples
+        )
+
+    else:
+
+        numeric_result = neutral_results["numeric"]
 
     numeric_report = numeric_result["report"]
 
-    # STEP 7: Date validation.
+    # STEP 8: Date validation.
 
-    date_result = validate_dates(
-        df,
-        schema=schema,
-        date_ranges=date_ranges,
-        no_future_columns=no_future_columns,
-        chronological_rules=chronological_rules,
-        excluded_columns=excluded_columns,
-        reference_time=reference_time
-    )
+    if validation_settings["dates"]["enabled"]:
+
+        date_result = validate_dates(
+            df,
+            schema=schema,
+            date_ranges=date_ranges,
+            no_future_columns=no_future_columns,
+            chronological_rules=chronological_rules,
+            excluded_columns=excluded_columns,
+            reference_time=reference_time
+        )
+
+    else:
+
+        date_result = neutral_results["dates"]
 
     date_report = date_result["report"]
 
-    # STEP 8: Contact validation.
+    # STEP 9: Contact validation.
 
-    contact_result = validate_contacts(
-        df,
-        schema=schema,
-        required_columns=required_columns,
-        excluded_columns=excluded_columns,
-        contact_columns=contact_columns
-    )
+    if validation_settings["contacts"]["enabled"]:
+
+        contact_result = validate_contacts(
+            df,
+            schema=schema,
+            required_columns=required_columns,
+            excluded_columns=excluded_columns,
+            contact_columns=contact_columns
+        )
+
+    else:
+
+        contact_result = neutral_results["contacts"]
 
     contact_report = contact_result["report"]
 
-    # STEP 9: Legacy classification.
+    # STEP 10: Legacy classification.
 
     warning_mask = (
         missing_result["warning_rows"]
@@ -196,7 +263,7 @@ def validate_universal(
 
     legacy_statuses = df["quality_status"].astype(str).tolist()
 
-    # STEP 10: Collect quality issues.
+    # STEP 11: Collect quality issues.
 
     quality_details = collect_validation_issues(
         df=df,
@@ -209,6 +276,7 @@ def validate_universal(
     )
 
     if len(quality_details) != len(df):
+
         raise ValueError(
             "Issue tracker returned an incorrect record count."
         )
@@ -223,6 +291,7 @@ def validate_universal(
             actual_status != "VALID"
             and not detail["quality_reasons"]
         ):
+
             detail["quality_reasons"].append({
                 "code": "QUALITY_VALIDATION_FAILURE",
                 "column": None,
@@ -233,7 +302,7 @@ def validate_universal(
                 )
             })
 
-    # STEP 11: Intelligent classification.
+    # STEP 12: Intelligent classification.
 
     print("\n========== INTELLIGENT CLASSIFICATION ==========")
 
@@ -253,10 +322,12 @@ def validate_universal(
         matches = engine_status == legacy_status
 
         if matches:
+
             final_status = engine_status
             classification_matches += 1
 
         else:
+
             final_status = legacy_status
             classification_mismatches += 1
 
@@ -282,7 +353,7 @@ def validate_universal(
 
     df["quality_status"] = final_statuses
 
-    # STEP 12: Generate classification summary.
+    # STEP 13: Classification summary.
 
     classification_summary = (
         generate_classification_summary(engine_results)
@@ -304,7 +375,7 @@ def validate_universal(
         "legacy_classification_preserved": True
     }
 
-    # STEP 13: INTELLIGENT QUALITY SCORING.
+    # STEP 14: Intelligent quality scoring.
 
     print("\n========== INTELLIGENT QUALITY SCORING ==========")
 
@@ -315,11 +386,10 @@ def validate_universal(
     )
 
     if len(record_scores) != len(df):
+
         raise ValueError(
             "Quality scorer returned an incorrect record count."
         )
-
-    # Attach individual scores to the detailed records.
 
     for detail, score_result in zip(
         engine_results,
@@ -331,8 +401,6 @@ def validate_universal(
         detail["total_penalty"] = score_result["total_penalty"]
         detail["applied_penalties"] = score_result["applied_penalties"]
 
-    # Add scores to the DataFrame.
-
     df["quality_score"] = [
         result["quality_score"]
         for result in record_scores
@@ -342,8 +410,6 @@ def validate_universal(
         result["quality_grade"]
         for result in record_scores
     ]
-
-    # Calculate overall dataset quality.
 
     dataset_quality_summary = calculate_dataset_quality(
         record_scores
@@ -366,13 +432,13 @@ def validate_universal(
         dataset_quality_summary["grade_distribution"]
     )
 
-    # STEP 14: Generate issue summary.
+    # STEP 15: Generate issue summary.
 
     issue_summary = generate_issue_summary(
         engine_results
     )
 
-    # STEP 15: Serialize record-level quality reasons.
+    # STEP 16: Serialize record-level quality reasons.
 
     df["quality_reasons"] = [
         json.dumps(
@@ -382,7 +448,7 @@ def validate_universal(
         for detail in engine_results
     ]
 
-    # STEP 16: Separate records.
+    # STEP 17: Separate records.
 
     valid_records = df[
         df["quality_status"] == "VALID"
@@ -396,13 +462,15 @@ def validate_universal(
         df["quality_status"] == "REJECTED"
     ].copy()
 
-    # STEP 17: Generate complete quality report.
+    # STEP 18: Generate complete quality report.
 
     report = {
         "total_records": int(len(df)),
         "valid_records": int(len(valid_records)),
         "warning_records": int(len(warning_records)),
         "rejected_records": int(len(rejected_records)),
+
+        "validation_configuration": validation_settings,
 
         "missing_value_rows": int(missing_rows.sum()),
         "duplicate_rows": int(duplicate_rows.sum()),
@@ -458,22 +526,16 @@ def validate_universal(
         "date_summary": date_report,
         "contact_summary": contact_report,
 
-        # Centralized issue tracking.
-
         "issue_summary": issue_summary,
         "record_quality_details": engine_results,
-
-        # Intelligent classification.
 
         "classification_summary": classification_summary,
         "classification_audit": classification_audit,
 
-        # Intelligent quality scoring.
-
         "dataset_quality_summary": dataset_quality_summary
     }
 
-    # STEP 18: Console reporting.
+    # STEP 19: Console reporting.
 
     print("\n========== CLASSIFICATION SUMMARY ==========")
 
@@ -495,6 +557,7 @@ def validate_universal(
             "record_quality_details",
             "classification_audit"
         } and not key.endswith("_summary"):
+
             print(f"{key}: {value}")
 
     print("\n========== ISSUE CODE FREQUENCY ==========")
@@ -502,11 +565,10 @@ def validate_universal(
     for code, count in issue_summary[
         "issue_code_counts"
     ].items():
+
         print(f"{code}: {count}")
 
     print("\n========== UNIVERSAL VALIDATION COMPLETED ==========\n")
-
-    # STEP 19: Preserve original four-value return structure.
 
     return (
         valid_records,

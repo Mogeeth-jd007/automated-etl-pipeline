@@ -300,7 +300,16 @@ def run_universal_pipeline(input_file):
 
             print(f"Input file: {file_path}")
 
-            return file_path, extract_universal(file_path)
+            
+            extraction_config = load_config().get(
+                "universal_extraction",
+                {}
+            )
+            return file_path, extract_universal(
+                file_path,
+                config=extraction_config
+            )
+            
 
         file_path, df = run_monitored_stage(
             execution,
@@ -317,10 +326,18 @@ def run_universal_pipeline(input_file):
 
         # STEP 2: TRANSFORM
 
+        transformation_config = load_config().get(
+            "universal_transformation",
+            {}
+        )
+
         transformed_df, schema = run_monitored_stage(
             execution,
             "TRANSFORM",
-            lambda: transform_universal(df),
+            lambda: transform_universal(
+                 df,
+                config=transformation_config
+            ),
             retry_config,
             retry_config["enabled"] and "TRANSFORM" in RETRY_SAFE_STAGES
         )
@@ -335,7 +352,13 @@ def run_universal_pipeline(input_file):
             retry_config["enabled"] and "SCORING_CONFIGURATION" in RETRY_SAFE_STAGES
         )
 
+
         # STEP 4: VALIDATION
+
+        validation_config = load_config().get(
+            "universal_validation",
+            {}
+        )
 
         valid, warning, rejected, report = run_monitored_stage(
             execution,
@@ -344,11 +367,15 @@ def run_universal_pipeline(input_file):
                 transformed_df,
                 schema=schema,
                 scoring_penalties=scoring_penalties,
-                scoring_severity_penalties=severity_penalties
+                scoring_severity_penalties=severity_penalties,
+                validation_config=validation_config
             ),
             retry_config,
             retry_config["enabled"] and "VALIDATION" in RETRY_SAFE_STAGES
         )
+
+
+        
 
         # STEP 5: DATABASE LOAD
         # Deliberately excluded from automatic retries.

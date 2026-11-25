@@ -1,4 +1,5 @@
-﻿import pandas as pd
+﻿
+import pandas as pd
 
 from .schema_detector import (
     detect_schema,
@@ -22,17 +23,77 @@ from .financial_handler import (
 )
 
 
-def clean_text_columns(df):
-    """Normalize text and missing-value representations."""
+DEFAULT_TRANSFORMATION_CONFIG = {
+    "standardize_columns": True,
+    "clean_text": True,
+    "normalize_missing_values": True,
+    "auto_convert_types": True,
+    "detect_currency": True,
+    "detect_percentage": True,
+    "detect_dates": True,
+    "detect_booleans": True,
+    "track_conversion_failures": True
+}
 
-    df = normalize_text_columns(df)
-    df = normalize_missing_values(df)
+
+def validate_transformation_config(config=None):
+    """Validate transformation configuration and apply defaults."""
+
+    if config is None:
+        config = {}
+
+    if not isinstance(config, dict):
+        raise ValueError(
+            "Transformation configuration must be a dictionary."
+        )
+
+    unknown_keys = set(config) - set(DEFAULT_TRANSFORMATION_CONFIG)
+
+    if unknown_keys:
+        raise ValueError(
+            f"Unknown transformation settings: {sorted(unknown_keys)}"
+        )
+
+    settings = DEFAULT_TRANSFORMATION_CONFIG.copy()
+    settings.update(config)
+
+    for name, value in settings.items():
+
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"Transformation setting '{name}' must be a boolean."
+            )
+
+    return settings
+
+
+def clean_text_columns(
+    df,
+    clean_text=True,
+    normalize_missing=True
+):
+    """Normalize text and missing values independently."""
+
+    df = df.copy()
+
+    if clean_text:
+        df = normalize_text_columns(df)
+
+    if normalize_missing:
+        df = normalize_missing_values(
+            df,
+            strip_whitespace=clean_text
+        )
 
     return df
 
 
-def convert_column_types(df, schema):
-    """Convert columns and track data conversion failures."""
+def convert_column_types(
+    df,
+    schema,
+    track_failures=True
+):
+    """Convert columns and optionally track conversion failures."""
 
     df = df.copy()
 
@@ -86,9 +147,7 @@ def convert_column_types(df, schema):
                 "non_null_count": int(units.notna().sum()),
                 "null_count": int(units.isna().sum()),
                 "unique_count": int(units.nunique()),
-                "sample_values": (
-                    units.dropna().head(3).tolist()
-                )
+                "sample_values": units.dropna().head(3).tolist()
             }
 
         elif data_type == "percentage":
@@ -124,26 +183,22 @@ def convert_column_types(df, schema):
 
         elif data_type == "boolean":
 
-            df[column] = convert_boolean_series(
-                df[column]
-            )
+            df[column] = convert_boolean_series(df[column])
 
             details["storage_type"] = "nullable_boolean"
 
             details["boolean_summary"] = {
-                "true_count": int(
-                    df[column].eq(True).sum()
-                ),
-                "false_count": int(
-                    df[column].eq(False).sum()
-                ),
-                "missing_count": int(
-                    df[column].isna().sum()
-                )
+                "true_count": int(df[column].eq(True).sum()),
+                "false_count": int(df[column].eq(False).sum()),
+                "missing_count": int(df[column].isna().sum())
             }
 
-        # Track conversions for supported logical data types.
-        if data_type in TRACKED_DATA_TYPES:
+        # Track conversion failures only when enabled.
+
+        if (
+            track_failures
+            and data_type in TRACKED_DATA_TYPES
+        ):
 
             details["conversion_report"] = (
                 track_conversion_failures(
@@ -158,31 +213,86 @@ def convert_column_types(df, schema):
     return df
 
 
-def transform_universal(df):
-    """Automatically standardize, clean and convert a dataset."""
+def transform_universal(df, config=None):
+    """Transform a dataset using configurable processing rules."""
+
+    settings = validate_transformation_config(config)
 
     print("\n========== UNIVERSAL TRANSFORMATION STARTED ==========")
 
-    df = standardize_column_names(df)
+    df = df.copy()
 
-    print("Column names standardized successfully.")
+    # STEP 1: Standardize column names.
 
-    df = clean_text_columns(df)
+    if settings["standardize_columns"]:
 
-    print("Advanced text normalization completed.")
-    print("Missing-value normalization completed.")
+        df = standardize_column_names(df)
 
-    df, schema = detect_schema(df)
+        print("Column names standardized successfully.")
+
+    else:
+
+        print("Column name standardization disabled.")
+
+    # STEP 2: Normalize text and missing values.
+
+    df = clean_text_columns(
+        df,
+        clean_text=settings["clean_text"],
+        normalize_missing=settings["normalize_missing_values"]
+    )
+
+    print(
+        "Text normalization:",
+        settings["clean_text"]
+    )
+
+    print(
+        "Missing-value normalization:",
+        settings["normalize_missing_values"]
+    )
+
+    # STEP 3: Detect schema.
+
+    detection_config = {
+        "detect_currency": settings["detect_currency"],
+        "detect_percentage": settings["detect_percentage"],
+        "detect_dates": settings["detect_dates"],
+        "detect_booleans": settings["detect_booleans"]
+    }
+
+    df, schema = detect_schema(
+        df,
+        standardize_columns=False,
+        detection_config=detection_config
+    )
 
     print("Automatic schema detection completed.")
 
-    df = convert_column_types(df, schema)
+    # STEP 4: Convert data types.
 
-    print("Intelligent data type conversion completed.")
-    print("Financial values and currency units processed.")
-    print("Advanced datetime conversion completed.")
-    print("Boolean value standardization completed.")
-    print("Data conversion failure tracking completed.")
+    if settings["auto_convert_types"]:
+
+        df = convert_column_types(
+            df,
+            schema,
+            track_failures=settings["track_conversion_failures"]
+        )
+
+        print("Intelligent data type conversion completed.")
+
+        print("Financial values and currency units processed.")
+        print("Advanced datetime conversion completed.")
+        print("Boolean value standardization completed.")
+
+    else:
+
+        print("Automatic data type conversion disabled.")
+
+    print(
+        "Conversion failure tracking:",
+        settings["track_conversion_failures"]
+    )
 
     print("========== UNIVERSAL TRANSFORMATION COMPLETED ==========\n")
 
