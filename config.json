@@ -45,11 +45,13 @@
         }
     },
 
+    "universal_profiling": {
+        "enabled": true
+    },
+
     "universal_date_validation": {
         "date_ranges": {},
-        "no_future_columns": [
-            "transaction_date"
-        ],
+        "no_future_columns": [],
         "chronological_rules": [],
         "reference_time": null
     },

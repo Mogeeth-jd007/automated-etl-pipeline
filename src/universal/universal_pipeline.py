@@ -1,4 +1,5 @@
 ﻿
+import hashlib
 from pathlib import Path
 
 import pandas as pd
@@ -7,7 +8,11 @@ from .universal_extract import extract_universal
 from .universal_transform import transform_universal
 from .universal_validate import validate_universal
 from .universal_load import load_universal
-from .report_generator import generate_reports
+
+from .report_generator import (
+    generate_reports,
+    generate_profiling_report
+)
 
 from .execution_tracker import (
     start_execution,
@@ -27,6 +32,12 @@ from .retry_manager import (
     validate_retry_config
 )
 
+from .processing_registry import (
+    get_database_path,
+    is_file_processed,
+    record_processed_file
+)
+
 try:
     from ..config import load_config
 except ImportError:
@@ -42,6 +53,10 @@ RETRY_SAFE_STAGES = {
     "VALIDATION"
 }
 
+
+# ============================================================
+# FILE RESOLUTION AND FINGERPRINTING
+# ============================================================
 
 def resolve_input_file(input_file):
     """Resolve absolute, project-relative and raw-folder CSV paths."""
@@ -78,6 +93,26 @@ def resolve_input_file(input_file):
     return resolved_path
 
 
+def calculate_file_hash(file_path):
+    """Generate a SHA-256 fingerprint using file contents."""
+
+    sha256 = hashlib.sha256()
+
+    with open(file_path, "rb") as file:
+
+        for chunk in iter(
+            lambda: file.read(1024 * 1024),
+            b""
+        ):
+            sha256.update(chunk)
+
+    return sha256.hexdigest()
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 def load_quality_scoring_config():
     """Load and validate quality scoring configuration."""
 
@@ -91,6 +126,7 @@ def load_quality_scoring_config():
         )
 
     penalties = scoring_config.get("penalties", {})
+
     severity_penalties = scoring_config.get(
         "severity_penalties",
         {}
@@ -146,6 +182,43 @@ def load_retry_config():
     }
 
 
+def load_profiling_config():
+    """Load and validate automatic profiling configuration."""
+
+    config = load_config()
+
+    profiling_config = config.get(
+        "universal_profiling",
+        {}
+    )
+
+    if not isinstance(profiling_config, dict):
+        raise ValueError(
+            "universal_profiling configuration must be a dictionary."
+        )
+
+    allowed_options = {"enabled"}
+
+    unknown_options = set(profiling_config) - allowed_options
+
+    if unknown_options:
+        raise ValueError(
+            "Unknown universal_profiling options: "
+            f"{sorted(unknown_options)}"
+        )
+
+    enabled = profiling_config.get("enabled", True)
+
+    if not isinstance(enabled, bool):
+        raise ValueError(
+            "universal_profiling.enabled must be a boolean."
+        )
+
+    return {
+        "enabled": enabled
+    }
+
+
 def load_date_validation_config():
     """Load and validate date-specific validation rules."""
 
@@ -177,14 +250,17 @@ def load_date_validation_config():
         )
 
     date_ranges = date_config.get("date_ranges", {})
+
     no_future_columns = date_config.get(
         "no_future_columns",
         []
     )
+
     chronological_rules = date_config.get(
         "chronological_rules",
         []
     )
+
     reference_time = date_config.get("reference_time")
 
     if not isinstance(date_ranges, dict):
@@ -209,6 +285,7 @@ def load_date_validation_config():
         )
 
     for rule in chronological_rules:
+
         if (
             not isinstance(rule, (list, tuple))
             or len(rule) != 2
@@ -229,6 +306,10 @@ def load_date_validation_config():
         "reference_time": reference_time
     }
 
+
+# ============================================================
+# STAGE MONITORING AND RETRY MANAGEMENT
+# ============================================================
 
 def run_monitored_stage(
     execution,
@@ -279,6 +360,7 @@ def run_monitored_stage(
             )
 
         else:
+
             result = operation()
 
         stage_result = complete_stage(stage)
@@ -293,6 +375,7 @@ def run_monitored_stage(
     except Exception as error:
 
         try:
+
             fail_stage(stage, error)
 
             print(
@@ -309,8 +392,55 @@ def run_monitored_stage(
         raise
 
 
+# ============================================================
+# PERSISTENT FILE PROCESSING REGISTRY
+# ============================================================
+
+def check_duplicate_file(file_path):
+    """
+    Check whether the CSV content has already been processed.
+
+    Returns the SHA-256 fingerprint and duplicate status.
+    """
+
+    file_hash = calculate_file_hash(file_path)
+
+    database_path = get_database_path()
+
+    duplicate = is_file_processed(
+        file_hash,
+        database_path=database_path
+    )
+
+    return file_hash, duplicate
+
+
+def register_successful_file(
+    file_hash,
+    file_path,
+    dataset_name,
+    execution_id,
+    records_processed,
+    database_path
+):
+    """Register a file only after successful pipeline completion."""
+
+    return record_processed_file(
+        file_hash=file_hash,
+        file_name=Path(file_path).name,
+        dataset_name=dataset_name,
+        execution_id=execution_id,
+        records_processed=records_processed,
+        database_path=database_path
+    )
+
+
+# ============================================================
+# UNIVERSAL AUTOMATED ETL PIPELINE
+# ============================================================
+
 def run_universal_pipeline(input_file):
-    """Run the universal ETL pipeline with retries and monitoring."""
+    """Run the universal ETL pipeline with persistent deduplication."""
 
     print("\n")
     print("=" * 60)
@@ -318,6 +448,82 @@ def run_universal_pipeline(input_file):
     print("=" * 60)
 
     dataset_name = Path(input_file).stem
+
+    # --------------------------------------------------------
+    # STEP 0: DUPLICATE FILE DETECTION
+    # --------------------------------------------------------
+
+    resolved_input = None
+    file_hash = None
+
+    try:
+
+        resolved_input = resolve_input_file(input_file)
+
+        print("\n========== FILE PROCESSING REGISTRY ==========")
+
+        print(
+            "Checking incoming file:",
+            resolved_input.name
+        )
+
+        try:
+
+            file_hash, duplicate = check_duplicate_file(
+                resolved_input
+            )
+
+            print("SHA-256 fingerprint:", file_hash)
+
+            if duplicate:
+
+                print("\nDUPLICATE FILE DETECTED")
+                print(
+                    "This file has already been successfully processed."
+                )
+
+                print("Dataset:", resolved_input.stem)
+
+                print(
+                    "Pipeline execution skipped to prevent "
+                    "duplicate processing."
+                )
+
+                return {
+                    "dataset": resolved_input.stem,
+                    "status": "SKIPPED_DUPLICATE",
+                    "duplicate": True,
+                    "file_hash": file_hash,
+                    "execution_id": None
+                }
+
+            print("Duplicate check: PASSED")
+            print("New file detected.")
+
+        except Exception as registry_error:
+
+            print(
+                "WARNING: Duplicate detection unavailable:",
+                registry_error
+            )
+
+            print(
+                "Pipeline will continue without pre-execution "
+                "duplicate protection."
+            )
+
+            file_hash = None
+
+    except (FileNotFoundError, ValueError):
+
+        # Preserve the original execution failure tracking.
+        # The EXTRACT stage will capture the actual error.
+
+        resolved_input = None
+
+    # --------------------------------------------------------
+    # START EXECUTION
+    # --------------------------------------------------------
 
     execution = start_execution(
         dataset_name=dataset_name,
@@ -333,9 +539,26 @@ def run_universal_pipeline(input_file):
     warning = pd.DataFrame()
     rejected = pd.DataFrame()
 
+    database_result = None
+    report_files = None
+
+    profiling_result = {
+        "status": "NOT_STARTED",
+        "profiling_report": None
+    }
+
+    registry_result = {
+        "status": "NOT_REGISTERED"
+    }
+
+    # --------------------------------------------------------
+    # RECORD COUNTS
+    # --------------------------------------------------------
+
     def get_record_counts():
 
         if report is not None:
+
             return {
                 "total_records": int(
                     report.get("total_records", 0)
@@ -352,6 +575,7 @@ def run_universal_pipeline(input_file):
             }
 
         if df is not None:
+
             return {
                 "total_records": int(len(df)),
                 "valid_records": int(len(valid)),
@@ -376,11 +600,17 @@ def run_universal_pipeline(input_file):
         print("Base delay:", retry_config["base_delay_seconds"])
         print("Maximum delay:", retry_config["max_delay_seconds"])
 
+        # ====================================================
         # STEP 1: EXTRACTION
+        # ====================================================
 
         def extract_operation():
 
-            file_path = resolve_input_file(input_file)
+            file_path = (
+                resolved_input
+                if resolved_input is not None
+                else resolve_input_file(input_file)
+            )
 
             print(f"Input file: {file_path}")
 
@@ -411,7 +641,9 @@ def run_universal_pipeline(input_file):
         print(f"Execution ID: {execution_id}")
         print(f"Dataset name: {dataset_name}")
 
+        # ====================================================
         # STEP 2: TRANSFORMATION
+        # ====================================================
 
         transformation_config = load_config().get(
             "universal_transformation",
@@ -430,7 +662,9 @@ def run_universal_pipeline(input_file):
             and "TRANSFORM" in RETRY_SAFE_STAGES
         )
 
+        # ====================================================
         # STEP 3: QUALITY SCORING CONFIGURATION
+        # ====================================================
 
         scoring_penalties, severity_penalties = run_monitored_stage(
             execution,
@@ -441,7 +675,9 @@ def run_universal_pipeline(input_file):
             and "SCORING_CONFIGURATION" in RETRY_SAFE_STAGES
         )
 
+        # ====================================================
         # STEP 4: VALIDATION CONFIGURATION
+        # ====================================================
 
         pipeline_config = load_config()
 
@@ -452,7 +688,9 @@ def run_universal_pipeline(input_file):
 
         date_validation_config = load_date_validation_config()
 
+        # ====================================================
         # STEP 5: VALIDATION
+        # ====================================================
 
         valid, warning, rejected, report = run_monitored_stage(
             execution,
@@ -479,7 +717,9 @@ def run_universal_pipeline(input_file):
             and "VALIDATION" in RETRY_SAFE_STAGES
         )
 
+        # ====================================================
         # STEP 6: DATABASE LOAD
+        # ====================================================
         # Database writes are deliberately excluded from retries.
 
         def database_operation():
@@ -501,7 +741,9 @@ def run_universal_pipeline(input_file):
             retry_enabled=False
         )
 
+        # ====================================================
         # STEP 7: REPORT GENERATION
+        # ====================================================
         # Report writes are deliberately excluded from retries.
 
         report_files = run_monitored_stage(
@@ -519,12 +761,110 @@ def run_universal_pipeline(input_file):
             retry_enabled=False
         )
 
-        # STEP 8: COMPLETE EXECUTION
+        # ====================================================
+        # STEP 8: DATASET PROFILING
+        # ====================================================
+
+        def profiling_operation():
+
+            profiling_config = load_profiling_config()
+
+            print("\nPROFILING CONFIGURATION")
+            print("Enabled:", profiling_config["enabled"])
+
+            if not profiling_config["enabled"]:
+
+                print(
+                    "Dataset profiling skipped because "
+                    "it is disabled in config.json."
+                )
+
+                return {
+                    "status": "DISABLED",
+                    "profiling_report": None
+                }
+
+            result = generate_profiling_report(
+                df,
+                dataset_name,
+                reference_time=date_validation_config[
+                    "reference_time"
+                ]
+            )
+
+            return {
+                "status": "COMPLETED",
+                "profiling_report": result["profiling_report"]
+            }
+
+        profiling_result = run_monitored_stage(
+            execution,
+            "DATASET_PROFILING",
+            profiling_operation,
+            retry_config,
+            retry_enabled=False
+        )
+
+        # ====================================================
+        # STEP 9: COMPLETE EXECUTION
+        # ====================================================
 
         execution_result = complete_execution(
             execution,
             **get_record_counts()
         )
+
+        # ====================================================
+        # STEP 10: REGISTER SUCCESSFULLY PROCESSED FILE
+        # ====================================================
+        # Registration happens only after all pipeline stages
+        # and execution completion have succeeded.
+        #
+        # Registry failure must not convert an already successful
+        # ETL execution into a failed execution.
+
+        try:
+
+            if file_hash is None:
+
+                file_hash = calculate_file_hash(file_path)
+
+            registry_result = {
+                "status": "REGISTERED",
+                "file_hash": file_hash,
+                "registered": register_successful_file(
+                    file_hash=file_hash,
+                    file_path=file_path,
+                    dataset_name=dataset_name,
+                    execution_id=execution_id,
+                    records_processed=report["total_records"],
+                    database_path=execution["database_path"]
+                )
+            }
+
+            print("\n========== FILE REGISTRY UPDATE ==========")
+            print("File:", file_path.name)
+            print("SHA-256:", file_hash)
+            print("Registry status:", registry_result["status"])
+            print("Registration successful.")
+
+        except Exception as registry_error:
+
+            registry_result = {
+                "status": "REGISTRATION_FAILED",
+                "error": str(registry_error)
+            }
+
+            print(
+                "\nWARNING: Pipeline succeeded, but file "
+                "registry registration failed."
+            )
+
+            print("Registry error:", registry_error)
+
+        # ====================================================
+        # FINAL PIPELINE SUMMARY
+        # ====================================================
 
         print("\n")
         print("=" * 60)
@@ -556,14 +896,40 @@ def run_universal_pipeline(input_file):
 
         print(f"Database table: {database_result['table_name']}")
 
+        print(
+            "Profiling status:",
+            profiling_result["status"]
+        )
+
+        print(
+            "File registry status:",
+            registry_result["status"]
+        )
+
+        if profiling_result["profiling_report"] is not None:
+
+            print(
+                "Profiling report:",
+                profiling_result["profiling_report"]
+            )
+
         print("\nExecution and retry history saved successfully.")
 
         return {
             "dataset": dataset_name,
+            "status": execution_result["status"],
+            "execution_id": execution_id,
             "quality_report": report,
             "database": database_result,
-            "files": report_files
+            "files": report_files,
+            "profiling_status": profiling_result["status"],
+            "profiling_report": profiling_result["profiling_report"],
+            "file_registry": registry_result
         }
+
+    # ========================================================
+    # FAILURE HANDLING
+    # ========================================================
 
     except Exception as error:
 
@@ -594,5 +960,12 @@ def run_universal_pipeline(input_file):
                 "WARNING: Execution failure tracking failed:",
                 tracking_error
             )
+
+        # Failed files are deliberately NOT registered.
+
+        print(
+            "File registry unchanged: failed executions "
+            "are not registered."
+        )
 
         raise

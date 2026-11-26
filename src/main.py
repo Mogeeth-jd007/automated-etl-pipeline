@@ -1,13 +1,11 @@
 
 import argparse
+import sys
+
+from pathlib import Path
+
 import pandas as pd
 
-from universal.universal_pipeline import run_universal_pipeline
-
-from extract import extract_data
-from transform import transform_data
-import sys
-from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,13 +13,21 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+from universal.universal_pipeline import run_universal_pipeline
+from universal.batch_processor import run_batch_pipeline
+
+from extract import extract_data
+from transform import transform_data
+
 from validate import (
     validate_data,
     classify_records,
     separate_records,
     save_validation_results
 )
+
 from load import load_data
+
 from config import load_config, load_dataset_config
 from logger import get_logger
 
@@ -33,19 +39,18 @@ def run_pipeline(dataset_name=None, input_file=None):
 
     try:
 
-        # Load project configuration
         config = load_config()
 
         if dataset_name is None:
             dataset_name = config["active_dataset"]
 
-        # Validate selected dataset profile
         dataset_config = load_dataset_config(dataset_name)
 
         logger.info("========== ETL PIPELINE STARTED ==========")
         logger.info("Selected dataset: %s", dataset_name)
 
         # STEP 1: EXTRACT
+
         logger.info("STEP 1: EXTRACT")
 
         df = extract_data(
@@ -56,6 +61,7 @@ def run_pipeline(dataset_name=None, input_file=None):
         logger.info("Extraction completed successfully")
 
         # STEP 2: TRANSFORM
+
         logger.info("STEP 2: TRANSFORM")
 
         transformed_df = transform_data(
@@ -66,6 +72,7 @@ def run_pipeline(dataset_name=None, input_file=None):
         logger.info("Transformation completed successfully")
 
         # STEP 3: VALIDATE
+
         logger.info("STEP 3: VALIDATE")
 
         validate_data(
@@ -76,6 +83,7 @@ def run_pipeline(dataset_name=None, input_file=None):
         logger.info("Validation completed successfully")
 
         # STEP 4: CLASSIFY
+
         logger.info("STEP 4: CLASSIFY")
 
         classified_df = classify_records(
@@ -86,6 +94,7 @@ def run_pipeline(dataset_name=None, input_file=None):
         logger.info("Classification completed successfully")
 
         # STEP 5: SEPARATE RECORDS
+
         logger.info("STEP 5: SEPARATE RECORDS")
 
         valid_records, warning_records, rejected_records = (
@@ -100,6 +109,7 @@ def run_pipeline(dataset_name=None, input_file=None):
         )
 
         # STEP 6: SAVE VALIDATION RESULTS
+
         logger.info("STEP 6: SAVE VALIDATION FILES")
 
         save_validation_results(
@@ -112,6 +122,7 @@ def run_pipeline(dataset_name=None, input_file=None):
         logger.info("Validation files saved successfully")
 
         # STEP 7: LOAD ELIGIBLE RECORDS
+
         logger.info("STEP 7: LOAD")
 
         records_to_load = pd.concat(
@@ -119,13 +130,11 @@ def run_pipeline(dataset_name=None, input_file=None):
             ignore_index=True
         )
 
-        # Remove classification column
         records_to_load = records_to_load.drop(
             columns=["status"],
             errors="ignore"
         )
 
-        # Convert configured dates into SQLite-friendly strings
         date_columns = dataset_config["transformation"].get(
             "date_columns",
             []
@@ -150,6 +159,7 @@ def run_pipeline(dataset_name=None, input_file=None):
         )
 
     except Exception:
+
         logger.exception("ETL PIPELINE FAILED")
         raise
 
@@ -157,30 +167,37 @@ def run_pipeline(dataset_name=None, input_file=None):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        description="Automated ETL Pipeline"
+        description="Universal Automated ETL Pipeline"
     )
 
-    parser.add_argument(
+    execution_mode = parser.add_mutually_exclusive_group()
+
+    execution_mode.add_argument(
         "--dataset",
         choices=["retail", "employee", "student"],
         default=None,
-        help="Dataset profile for existing ETL mode"
+        help="Run the existing dataset-specific ETL pipeline"
     )
 
-    parser.add_argument(
+    execution_mode.add_argument(
         "--file",
         default=None,
-        help="CSV file for universal automated ETL mode"
+        help="Run universal ETL on a single CSV file"
+    )
+
+    execution_mode.add_argument(
+        "--batch",
+        action="store_true",
+        help="Automatically process all CSV files in data/raw"
     )
 
     args = parser.parse_args()
 
-    if args.dataset and args.file:
-        parser.error(
-            "--dataset and --file cannot be used together."
-        )
+    if args.batch:
 
-    if args.file:
+        run_batch_pipeline()
+
+    elif args.file:
 
         run_universal_pipeline(args.file)
 
